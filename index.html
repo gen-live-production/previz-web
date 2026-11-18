@@ -224,7 +224,7 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.12;
 controls.screenSpacePanning = true;
-// one finger turns, two fingers move the view (as in the app); a clear pinch zooms (below)
+// one finger turns; two fingers are handled below (move the view, a clear pinch zooms)
 controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.PAN };
 controls.maxPolarAngle = Math.PI * 0.98;
 
@@ -360,28 +360,41 @@ function repivot() {
 }
 controls.addEventListener("start", () => { if (!fly) { repivot(); leaveCamera(); } });
 
-// pinch: two fingers whose distance clearly changes (more than 6 %) zoom towards the pivot;
-// a small change is just the hands not being still, and two fingers then only move the view
+// two fingers: the view moves with the point between them (OrbitControls has no plain
+// two-finger pan, so it is done here); fingers that clearly spread or close (over 15 %) zoom
+// towards the pivot as well. A smaller change of their distance is just hands not being still.
 const fingers = new Map();
-let pinch = null;
-canvas.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") { fingers.set(e.pointerId, [e.clientX, e.clientY]); pinch = null; } });
+let twoFingers = null;
+function panByPixels(dx, dy) {
+  const dist = camera.position.distanceTo(controls.target);
+  const reach = dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 2 / canvas.clientHeight;
+  const off = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0).multiplyScalar(-dx * reach);
+  off.add(new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1).multiplyScalar(dy * reach));
+  camera.position.add(off);
+  controls.target.add(off);
+  needs = true;
+}
+canvas.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") { fingers.set(e.pointerId, [e.clientX, e.clientY]); twoFingers = null; } });
 canvas.addEventListener("pointermove", (e) => {
   if (e.pointerType !== "touch" || !fingers.has(e.pointerId)) return;
   fingers.set(e.pointerId, [e.clientX, e.clientY]);
   if (fingers.size !== 2) return;
   const [a, b] = [...fingers.values()];
   const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
-  if (!pinch) { pinch = { d0: d, last: d, live: false }; return; }
-  if (!pinch.live && Math.abs(d / pinch.d0 - 1) > 0.06) { pinch.live = true; pinch.last = d; }
-  if (!pinch.live || d < 1) return;
-  const k = pinch.last / d;
-  pinch.last = d;
+  const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  if (!twoFingers) { twoFingers = { d0: d, last: d, mid, zooming: false }; return; }
+  panByPixels(mid[0] - twoFingers.mid[0], mid[1] - twoFingers.mid[1]);
+  twoFingers.mid = mid;
+  if (!twoFingers.zooming && Math.abs(d / twoFingers.d0 - 1) > 0.15) { twoFingers.zooming = true; twoFingers.last = d; }
+  if (!twoFingers.zooming || d < 1) return;
+  const k = twoFingers.last / d;
+  twoFingers.last = d;
   const off = camera.position.clone().sub(controls.target);
   const len = THREE.MathUtils.clamp(off.length() * k, controls.minDistance, controls.maxDistance);
   camera.position.copy(controls.target).addScaledVector(off.normalize(), len);
   needs = true;
 });
-const fingerUp = (e) => { fingers.delete(e.pointerId); pinch = null; };
+const fingerUp = (e) => { fingers.delete(e.pointerId); twoFingers = null; };
 canvas.addEventListener("pointerup", fingerUp);
 canvas.addEventListener("pointercancel", fingerUp);
 controls.addEventListener("change", () => { needs = true; });
