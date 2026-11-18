@@ -240,7 +240,7 @@ const $ = (id) => document.getElementById(id);
 // The build of this page. BUMP IT with every change of this file: a page that finds a newer
 // build on the server reloads itself past the browser's cache (GitHub Pages lets browsers
 // keep the page for ten minutes), and the help shows it, so one can tell what a phone runs.
-const BUILD = "2026-11-18.5";
+const BUILD = "2026-11-18.7";
 (async () => {
   try {
     const live = (await (await fetch("index.html", { cache: "no-store" })).text()).match(/const BUILD = "([^"]+)"/);
@@ -517,7 +517,7 @@ $("helpClose").addEventListener("click", () => { $("help").hidden = true; });
 function adopt(obj, title, facts) {
   if (root) {
     scene.remove(root);
-    root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => m.dispose()); });
+    root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); });
   }
   root = obj;
   scene.add(root);
@@ -542,6 +542,16 @@ function adopt(obj, title, facts) {
   root.traverse((o) => {
     if (o.userData && typeof o.userData.name === "string") o.name = o.userData.name;
     for (let n = o; n && n !== root; n = n.parent) if (n.userData && n.userData.kind === "camera-body") { o.userData.cameraBody = true; break; }
+    // an LED screen: its dark panel and the picture on it lie on (or a hair before) the drawn
+    // screen; drawn with a depth offset they never flicker against it, however far the view is
+    if (o.isMesh) for (let n = o; n && n !== root; n = n.parent) {
+      const kind = n.userData && n.userData.kind;
+      if (kind === "led-panel" || kind === "led-picture") {
+        const k = kind === "led-picture" ? -8 : -4;
+        [].concat(o.material).forEach((m) => { m.polygonOffset = true; m.polygonOffsetFactor = k; m.polygonOffsetUnits = k; m.side = kind === "led-picture" ? THREE.FrontSide : THREE.DoubleSide; });
+        break;
+      }
+    }
   });
   cams = [];
   root.traverse((o) => { if (o.isCamera) cams.push({ node: o.parent && o.parent.isObject3D && o.parent.userData && o.parent.userData.label ? o.parent : o, cam: o, extras: (o.parent && o.parent.userData && o.parent.userData.label ? o.parent.userData : o.userData) }); });
@@ -624,8 +634,16 @@ async function openLink() {
   $("busyText").textContent = "Stahuji scénu…";
   $("busyBar").style.width = "0";
   try {
-    const res = await fetch(`p/${code}/model.bin`, { cache: "force-cache" });
-    if (!res.ok) throw new Error(`odkaz už neplatí (${res.status})`);
+    // a scene just published is not on the web for a minute or so: a 404 is asked again every
+    // five seconds for two minutes before the link is said to be gone
+    let res = null;
+    for (let attempt = 0; attempt < 24; attempt++) {
+      res = await fetch(`p/${code}/model.bin`, { cache: attempt ? "reload" : "default" });
+      if (res.status !== 404) break;
+      $("busyText").textContent = "Scéna se právě zveřejňuje, zkouším znovu…";
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    if (!res.ok) throw new Error(res.status === 404 ? "odkaz už neplatí (scéna byla zrušena)" : `server odpověděl ${res.status}`);
     const total = Number(res.headers.get("content-length")) || 0;
     const parts = []; let got = 0;
     const reader = res.body.getReader();
