@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Previz Web</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;700&family=Oswald:wght@500&display=swap" rel="stylesheet">
+<style>
+/* GEN live: black stage, brand red only as a signal (selected, on air), white whale text.
+   Layout: the 3D view fills the screen; a top bar, a bottom dock of views and cameras, a layer
+   panel on the right that folds away. Touch targets 44 px for iPad. */
+:root {
+  --bg: #000000;
+  --panel: rgba(10, 10, 10, 0.92);
+  --line: rgba(255, 255, 255, 0.14);
+  --text: #f2f3f4;
+  --muted: #9a9ea6;
+  --red: #ff0033;
+  --label: "Oswald", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --body: "Nunito Sans", "Helvetica Neue", Arial, sans-serif;
+  --top: 64px;
+  --bottom: 64px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 15px; overflow: hidden; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#view { position: fixed; inset: 0; touch-action: none; display: block; width: 100%; height: 100%; }
+.label { font-family: var(--label); font-weight: 500; text-transform: uppercase; letter-spacing: 0.12em; font-size: 13px; }
+.note { color: var(--muted); font-size: 13px; }
+header {
+  position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 16px;
+  padding: calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 16px) 8px calc(env(safe-area-inset-left) + 16px);
+  background: linear-gradient(var(--panel), var(--panel)); border-bottom: 1px solid var(--line); z-index: 3;
+}
+header .brand { font-family: var(--label); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; font-size: 16px; white-space: nowrap; }
+header .brand b { color: var(--red); font-weight: 500; }
+header .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button, .btn, #layers .row { touch-action: manipulation; }
+button, .btn {
+  font-family: var(--label); font-weight: 500; text-transform: uppercase; letter-spacing: 0.12em; font-size: 13px;
+  min-height: 44px; padding: 0 16px; border: 1px solid var(--line); background: #0a0a0a; color: var(--text);
+  border-radius: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+button:hover { border-color: var(--red); }
+button:focus-visible, .btn:focus-visible, input:focus-visible + label { outline: 2px solid var(--red); outline-offset: 2px; }
+button.on { background: var(--text); color: #000; border-color: var(--text); }
+button[hidden] { display: none; }
+button.primary { background: var(--red); border-color: var(--red); color: #000; }
+#dock {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; background: var(--panel); border-top: 1px solid var(--line);
+  padding: 8px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 16px);
+  display: flex; gap: 16px; align-items: center;
+}
+#views { display: flex; gap: 8px; flex: none; }
+#cams { display: flex; gap: 8px; overflow-x: auto; flex: 1; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+#cams::-webkit-scrollbar { display: none; }
+#cams button { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; padding: 4px 12px; line-height: 1.25; }
+#cams button .n { font-size: 13px; }
+#cams button .f { font-family: var(--body); text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--muted); }
+#cams button.on .f { color: #333; }
+#layers {
+  position: fixed; right: calc(env(safe-area-inset-right) + 16px); top: calc(var(--top) + 12px); z-index: 3;
+  width: 280px; max-height: calc(100% - var(--top) - var(--bottom) - 24px); overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: var(--panel); border: 1px solid var(--line); padding: 8px 0;
+}
+#layers[hidden] { display: none; }
+#layers .row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+#layers .row:last-child { border-bottom: 0; }
+#layers .row.sub { padding-left: 32px; min-height: 40px; }
+#layers .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#layers .row .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sw { width: 36px; height: 20px; border: 1px solid var(--line); position: relative; flex: none; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; background: var(--muted); }
+.on > .sw { border-color: var(--red); }
+.on > .sw::after { left: auto; right: 3px; background: var(--red); }
+#hud {
+  position: fixed; left: calc(env(safe-area-inset-left) + 16px); top: calc(var(--top) + 12px); z-index: 2;
+  background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; max-width: calc(100% - 340px);
+}
+#hud .label { color: var(--muted); }
+#hud .big { font-family: var(--label); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; font-size: 16px; margin-top: 2px; }
+#hud .big.air { color: var(--red); }
+/* the camera's 16:9 picture while looking through it (the rest of the screen dimmed) */
+#frame { position: fixed; z-index: 1; pointer-events: none; outline: 1px solid var(--red); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45); }
+#frame[hidden] { display: none; }
+#busy, #drop {
+  position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.72);
+}
+#busy[hidden], #drop[hidden] { display: none; }
+#busy .box, #drop .box { background: #0a0a0a; border: 1px solid var(--line); border-top: 2px solid var(--red); padding: 24px 28px; max-width: 480px; }
+#busy .bar { height: 4px; background: var(--line); margin-top: 12px; }
+#busy .bar i { display: block; height: 100%; width: 0; background: var(--red); }
+#help { position: fixed; z-index: 4; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); }
+#help[hidden] { display: none; }
+#help .box { background: #0a0a0a; border: 1px solid var(--line); border-top: 2px solid var(--red); padding: 24px 28px; max-width: 560px; line-height: 1.55; }
+#help ol { padding-left: 20px; margin: 12px 0; }
+#help .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 12px 0 16px; }
+@media (max-width: 760px) {
+  #layers { width: auto; left: calc(env(safe-area-inset-left) + 16px); }
+  #hud { max-width: calc(100% - 32px); }
+  header .brand span { display: none; }
+}
+/* phones: everything half size. One-row top bar (brand, title, small buttons), a one-line
+   HUD chip, a dock of two short rows: the three views, then the cameras as chips. */
+@media (max-width: 600px), (max-height: 500px) {
+  html, body { font-size: 12px; }
+  .label { font-size: 10px; letter-spacing: 0.1em; }
+  .note { font-size: 11px; }
+  header { gap: 8px; padding: calc(env(safe-area-inset-top) + 4px) calc(env(safe-area-inset-right) + 10px) 4px calc(env(safe-area-inset-left) + 10px); }
+  header .brand { font-size: 11px; }
+  header .title { font-size: 11px; }
+  header .title #facts { display: none; }
+  button, .btn { min-height: 28px; padding: 0 9px; font-size: 10px; letter-spacing: 0.1em; gap: 5px; }
+  #open .long { display: none; }
+  #helpBtn { padding: 0 10px; }
+  #hud { left: calc(env(safe-area-inset-left) + 10px); top: calc(var(--top) + 6px); padding: 4px 8px; max-width: calc(100% - 20px); display: flex; gap: 8px; align-items: baseline; }
+  #hud .big { font-size: 10px; letter-spacing: 0.1em; margin-top: 0; }
+  #hud .big:empty { display: none; }
+  #dock { flex-wrap: wrap; gap: 5px; padding: 5px calc(env(safe-area-inset-right) + 10px) calc(env(safe-area-inset-bottom) + 5px) calc(env(safe-area-inset-left) + 10px); }
+  #views { flex-basis: 100%; gap: 5px; }
+  #views button { flex: 1; justify-content: center; padding: 0 4px; }
+  #cams { flex-basis: 100%; gap: 5px; }
+  #cams button { flex-direction: row; align-items: center; gap: 6px; padding: 0 8px; min-height: 28px; }
+  #cams button .n { font-size: 10px; }
+  #cams button .f { font-size: 11px; }
+  #cams button .f .sup { display: none; }
+  #layers { left: calc(env(safe-area-inset-left) + 10px); right: calc(env(safe-area-inset-right) + 10px); top: calc(var(--top) + 6px); width: auto; padding: 4px 0; max-height: calc(100% - var(--top) - var(--bottom) - 12px); }
+  #layers .row { min-height: 32px; padding: 0 10px; gap: 8px; }
+  #layers .row.sub { min-height: 28px; padding-left: 22px; }
+  #layers .row .count { font-size: 10px; }
+  .sw { width: 26px; height: 14px; }
+  .sw::after { top: 2px; left: 2px; width: 8px; height: 8px; }
+  .on > .sw::after { right: 2px; }
+  #busy .box, #drop .box, #help .box { margin: 12px; padding: 14px 16px; line-height: 1.45; }
+  #help ol { margin: 8px 0; padding-left: 16px; }
+  #help .keys { gap: 4px 10px; margin: 8px 0 10px; }
+}
+/* phone held sideways: one row at the bottom, the views and the cameras side by side */
+@media (max-height: 500px) {
+  #views { flex-basis: auto; flex: none; }
+  #views button { flex: none; padding: 0 8px; }
+  #cams { flex-basis: auto; flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view" aria-label="3D pohled na scénu"></canvas>
+
+<header>
+  <div class="brand">Previz <b>·</b> <span>Web</span></div>
+  <div class="title"><span id="title" class="label">Ukázková scéna</span> <span id="facts" class="note"></span></div>
+  <input type="file" id="file" hidden>
+  <button id="open" class="primary" type="button">Otevřít<span class="long">&nbsp;.glb</span></button>
+  <button id="layersBtn" type="button" aria-expanded="false">Vrstvy</button>
+  <button id="helpBtn" type="button" aria-label="Nápověda">?</button>
+</header>
+
+<div id="frame" hidden></div>
+<div id="hud"><div class="label" id="hudLabel">Volný pohled</div><div class="big" id="hudBig"></div></div>
+
+<aside id="layers" hidden aria-label="Vrstvy"></aside>
+
+<nav id="dock" aria-label="Pohledy a kamery">
+  <div id="views">
+    <button type="button" data-view="all">Celek</button>
+    <button type="button" data-view="top">Shora</button>
+    <button type="button" data-view="front">Zepředu</button>
+  </div>
+  <div id="cams"></div>
+</nav>
+
+<div id="busy" hidden><div class="box"><div class="label">Načítám</div><div id="busyText" class="note">…</div><div class="bar"><i id="busyBar"></i></div></div></div>
+<div id="drop" hidden><div class="box"><div class="label">Pusť soubor .glb z Previzu</div></div></div>
+
+<div id="help" hidden>
+  <div class="box" role="dialog" aria-labelledby="helpTitle">
+    <div class="label" id="helpTitle">Previz Web</div>
+    <ol id="helpSteps">
+      <li>V Previz Stream: Export › WEB › <b>Publikovat odkaz…</b> a odkaz pošli.</li>
+      <li>Nebo Export › WEB › <b>Uložit .glb…</b>, soubor pošli na iPad a tady <b>Otevřít</b>.</li>
+    </ol>
+    <div class="keys">
+      <span class="label">1 prst</span><span>otáčení kolem bodu</span>
+      <span class="label">2 prsty</span><span>posun a přiblížení</span>
+      <span class="label">2× ťuk</span><span>přiletět na místo</span>
+      <span class="label">Kamera</span><span>pohled objektivem s jeho ohniskem; pohnutím prstem odejdeš do volného pohledu</span>
+    </div>
+    <button id="helpClose" type="button">Zavřít</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const canvas = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+// a phone: fewer pixels drawn (a 3× screen at 1.6× still looks sharp, the GPU and battery last)
+const phone = window.matchMedia("(max-width: 600px), (max-height: 500px)").matches || /iPhone|iPod|Android.+Mobile/.test(navigator.userAgent);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, phone ? 1.6 : 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0b0c);
+scene.add(new THREE.HemisphereLight(0xf2f3f4, 0x2a2b2e, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(0.6, 1, 0.35);
+scene.add(sun);
+const grid = new THREE.GridHelper(200, 40, 0x3a3b40, 0x1d1e21);
+scene.add(grid);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 5000);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.12;
+controls.screenSpacePanning = true;
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+controls.maxPolarAngle = Math.PI * 0.98;
+
+let root = null;          // the loaded scene
+let cams = [];            // { node, cam, extras }
+let bounds = new THREE.Box3(new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 10, 20));
+let through = null;       // index of the camera looked through
+let fly = null;           // an animation of the view
+let needs = true;
+
+const $ = (id) => document.getElementById(id);
+const fmt = (n, d = 1) => n.toLocaleString("cs-CZ", { maximumFractionDigits: d, minimumFractionDigits: d });
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  // the panels sit between the real bars (their height changes with the phone's orientation)
+  const css = document.documentElement.style;
+  css.setProperty("--top", `${document.querySelector("header").getBoundingClientRect().bottom}px`);
+  css.setProperty("--bottom", `${h - $("dock").getBoundingClientRect().top}px`);
+  if (through !== null && !fly) { camera.fov = throughFov(cams[through]); camera.updateProjectionMatrix(); }
+  placeFrame();
+  needs = true;
+}
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => setTimeout(resize, 250));
+
+// the vertical view that shows the camera's whole 16:9 picture on this screen
+function throughFov(c) {
+  const aspect = camera.aspect;
+  if (aspect >= 16 / 9) return c.cam.fov;
+  const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(c.cam.fov) / 2) * (16 / 9));
+  return Math.min(THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hfov / 2) / aspect)), 150);
+}
+
+// the 16:9 picture's outline on the screen while looking through a camera
+function placeFrame() {
+  const f = $("frame");
+  if (through === null) { f.hidden = true; return; }
+  const W = window.innerWidth, H = window.innerHeight;
+  let w = W, h = W * 9 / 16;
+  if (h > H) { h = H; w = H * 16 / 9; }
+  Object.assign(f.style, { left: `${(W - w) / 2}px`, top: `${(H - h) / 2}px`, width: `${w}px`, height: `${h}px` });
+  f.hidden = false;
+}
+
+// ---- views -------------------------------------------------------------------------------
+function frame(dirX, dirY, dirZ, fov = 50) {
+  const c = bounds.getCenter(new THREE.Vector3());
+  const size = bounds.getSize(new THREE.Vector3());
+  const r = Math.max(size.length() / 2, 2);
+  const d = r / Math.sin(THREE.MathUtils.degToRad(fov) / 2) * 0.62;
+  const dir = new THREE.Vector3(dirX, dirY, dirZ).normalize();
+  flyTo(c.clone().addScaledVector(dir, d), c, fov);
+}
+const views = {
+  all: () => frame(0.55, 0.62, 0.8),
+  top: () => frame(0.0001, 1, 0.0001),
+  // the audience of a Previz project sits towards drawing −Y, which is +Z here
+  front: () => frame(0, 0.22, 1),
+};
+
+function flyTo(pos, target, fov) {
+  fly = { start: performance.now(), from: camera.position.clone(), to: pos, fromT: controls.target.clone(), toT: target, fromF: camera.fov, toF: fov ?? camera.fov };
+  needs = true;
+}
+
+// the cameras' small bodies: hidden while looking through one (the view starts inside it)
+function bodies(show) {
+  if (!root) return;
+  root.traverse((o) => { if (o.isMesh && o.userData.cameraBody) o.visible = show; });
+  needs = true;
+}
+
+function leaveCamera() {
+  if (through === null) return;
+  through = null;
+  bodies(true);
+  placeFrame();
+  markCams();
+  setHud("Volný pohled", "", false);
+}
+
+function lookThrough(i) {
+  const c = cams[i];
+  if (!c) return;
+  c.node.updateWorldMatrix(true, false);
+  const pos = new THREE.Vector3(), quat = new THREE.Quaternion();
+  c.node.matrixWorld.decompose(pos, quat, new THREE.Vector3());
+  const ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  flyTo(pos, pos.clone().addScaledVector(ahead, 8), throughFov(c));
+  through = i;
+  bodies(false);
+  markCams();
+  placeFrame();
+  const e = c.extras || {};
+  // a phone has room for the focal length and the height; a bigger screen gets the lens too
+  const lens = phone ? "" : [e.body, e.lens].filter(Boolean).join(" · ");
+  const fl = e.focal_mm ? `${fmt(e.focal_mm, 0)} mm` : "";
+  const hgt = e.height_m !== undefined ? `výška ${fmt(e.height_m, 1)} m` : "";
+  setHud(e.label || c.node.name, [fl, lens, hgt].filter(Boolean).join(" · "), true);
+}
+
+function setHud(label, big, air) {
+  $("hudLabel").textContent = label;
+  $("hudBig").textContent = big;
+  $("hudBig").classList.toggle("air", !!air);
+}
+
+document.querySelectorAll("#views button").forEach((b) => b.addEventListener("click", () => { leaveCamera(); views[b.dataset.view](); }));
+controls.addEventListener("start", () => { if (!fly) leaveCamera(); });
+controls.addEventListener("change", () => { needs = true; });
+
+// double tap: fly to the point under the finger
+const ray = new THREE.Raycaster();
+let lastTap = 0;
+canvas.addEventListener("pointerup", (ev) => {
+  const now = performance.now();
+  if (now - lastTap < 320 && root) {
+    const r = canvas.getBoundingClientRect();
+    const p = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(p, camera);
+    const hits = ray.intersectObject(root, true).filter((h) => h.object.visible && visibleChain(h.object));
+    if (hits.length) {
+      leaveCamera();
+      const at = hits[0].point;
+      const back = camera.position.clone().sub(controls.target).multiplyScalar(0.45);
+      flyTo(at.clone().add(back), at);
+    }
+    lastTap = 0;
+  } else lastTap = now;
+});
+function visibleChain(o) { for (let n = o; n; n = n.parent) if (!n.visible) return false; return true; }
+
+// ---- cameras and layers ------------------------------------------------------------------
+function markCams() {
+  document.querySelectorAll("#cams button").forEach((b, i) => b.classList.toggle("on", i === through));
+}
+
+function buildCams() {
+  const box = $("cams");
+  box.innerHTML = "";
+  cams.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    const e = c.extras || {};
+    const n = document.createElement("span"); n.className = "n"; n.textContent = e.label || c.node.name;
+    const f = document.createElement("span"); f.className = "f"; f.textContent = e.focal_mm ? `${fmt(e.focal_mm, 0)} mm` : "";
+    if (e.support) { const sup = document.createElement("span"); sup.className = "sup"; sup.textContent = `${e.focal_mm ? " · " : ""}${e.support}`; f.append(sup); }
+    b.append(n, f);
+    b.addEventListener("click", () => lookThrough(i));
+    box.append(b);
+  });
+  if (!cams.length) {
+    const s = document.createElement("span"); s.className = "note"; s.textContent = "Projekt nemá kamery";
+    box.append(s);
+  }
+}
+
+function countMeshes(o) { let n = 0; o.traverse((x) => { if (x.isMesh) n += x.isInstancedMesh ? x.count : 1; }); return n; }
+
+function buildLayers() {
+  const panel = $("layers");
+  panel.innerHTML = "";
+  if (!root) return;
+  const row = (obj, sub) => {
+    const r = document.createElement("div");
+    r.className = "row" + (sub ? " sub" : "") + (obj.visible ? " on" : "");
+    r.setAttribute("role", "switch");
+    r.setAttribute("aria-checked", String(obj.visible));
+    r.tabIndex = 0;
+    const sw = document.createElement("span"); sw.className = "sw";
+    const name = document.createElement("span"); name.className = "name" + (sub ? "" : " label"); name.textContent = obj.name || "Vrstva";
+    r.append(sw, name);
+    if (!sub && obj.name === "Publikum") {
+      let people = 0; obj.traverse((x) => { if (x.isInstancedMesh) people += x.count; });
+      const c = document.createElement("span"); c.className = "count"; c.textContent = people.toLocaleString("cs-CZ"); r.append(c);
+    }
+    const toggle = () => { obj.visible = !obj.visible; r.classList.toggle("on", obj.visible); r.setAttribute("aria-checked", String(obj.visible)); needs = true; };
+    r.addEventListener("click", toggle);
+    r.addEventListener("keydown", (ev) => { if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); toggle(); } });
+    panel.append(r);
+  };
+  for (const g of root.children) {
+    row(g, false);
+    // the layers of each drawing (and of Stavba) one level down
+    const kids = g.name === "Podklady" ? g.children.flatMap((d) => [d, ...d.children]) : (g.name === "Stavba" ? g.children : []);
+    for (const k of kids) if (k.name && !k.name.endsWith(" · síť")) row(k, true);
+  }
+}
+$("layersBtn").addEventListener("click", () => {
+  const p = $("layers");
+  p.hidden = !p.hidden;
+  $("layersBtn").classList.toggle("on", !p.hidden);
+  $("layersBtn").setAttribute("aria-expanded", String(!p.hidden));
+});
+$("helpBtn").addEventListener("click", () => { $("help").hidden = false; });
+$("helpClose").addEventListener("click", () => { $("help").hidden = true; });
+
+// ---- loading -----------------------------------------------------------------------------
+function adopt(obj, title, facts) {
+  if (root) {
+    scene.remove(root);
+    root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => m.dispose()); });
+  }
+  root = obj;
+  scene.add(root);
+  root.updateMatrixWorld(true);
+  bounds = new THREE.Box3().setFromObject(root);
+  if (bounds.isEmpty()) bounds.set(new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 10, 20));
+  const size = bounds.getSize(new THREE.Vector3());
+  const span = Math.max(size.x, size.z, 10);
+  camera.near = Math.max(0.02, span / 20000);
+  camera.far = span * 40;
+  camera.updateProjectionMatrix();
+  scene.remove(grid);
+  const g = new THREE.GridHelper(Math.ceil(span * 1.4 / 10) * 10, Math.ceil(span * 1.4 / 10), 0x3a3b40, 0x1d1e21);
+  g.position.y = bounds.min.y - 0.01;
+  scene.add(g);
+  // Previz writes each node's own name and kind in its extras (three.js rewrites names)
+  root.traverse((o) => {
+    if (o.userData && typeof o.userData.name === "string") o.name = o.userData.name;
+    for (let n = o; n && n !== root; n = n.parent) if (n.userData && n.userData.kind === "camera-body") { o.userData.cameraBody = true; break; }
+  });
+  cams = [];
+  root.traverse((o) => { if (o.isCamera) cams.push({ node: o.parent && o.parent.isObject3D && o.parent.userData && o.parent.userData.label ? o.parent : o, cam: o, extras: (o.parent && o.parent.userData && o.parent.userData.label ? o.parent.userData : o.userData) }); });
+  cams.sort((a, b) => (a.extras.number ?? 999) - (b.extras.number ?? 999));
+  $("title").textContent = title;
+  $("facts").textContent = facts;
+  through = null;
+  placeFrame();
+  buildCams();
+  buildLayers();
+  setHud("Volný pohled", "", false);
+  views.all();
+}
+
+function openBuffer(buf, name) {
+  const head = new Uint8Array(buf, 0, 4);
+  if (String.fromCharCode(...head) !== "glTF") {
+    showError(`${name} není soubor .glb. V Previz Stream ho ulož přes Export › WEB · IPAD › Uložit .glb…`);
+    return;
+  }
+  $("busyText").textContent = `Skládám scénu · ${fmt(buf.byteLength / 1e6)} MB`;
+  $("busyBar").style.width = "100%";
+  const t0 = performance.now();
+  new GLTFLoader().parse(buf, "", (gltf) => {
+    const sc = gltf.scene;
+    // glTF cameras arrive as children of their nodes; Previz writes the camera data on the node
+    const meta = (gltf.scenes[0] && gltf.scenes[0].userData && gltf.scenes[0].userData.previz) || sc.userData.previz || {};
+    const title = meta.title || name.replace(/\.glb$/i, "");
+    let tris = 0; sc.traverse((o) => { if (o.isMesh && o.geometry.index) tris += (o.geometry.index.count / 3) * (o.isInstancedMesh ? o.count : 1); });
+    const facts = [meta.cameras !== undefined ? `${meta.cameras} kamer` : "", meta.people ? `${meta.people.toLocaleString("cs-CZ")} lidí` : "", `${fmt(tris / 1e6)} mil. trojúhelníků`].filter(Boolean).join(" · ");
+    adopt(sc, title, facts);
+    $("busy").hidden = true;
+    if (phone && tris > 4e6) {
+      const crowd = sc.children.find((g) => g.name === "Publikum");
+      if (crowd) {
+        crowd.visible = false;
+        buildLayers();
+        setHud("Publikum vypnuté", "zapneš ho ve Vrstvách", false);
+        needs = true;
+      }
+    }
+  }, (err) => showError(`Soubor nejde otevřít: ${err.message || err}`));
+}
+
+function showError(text) {
+  $("busy").hidden = false;
+  $("busyText").textContent = text;
+  $("busyBar").style.width = "0";
+  setTimeout(() => { $("busy").hidden = true; }, 6000);
+}
+
+function readFile(file) {
+  if (!file) return;
+  $("busy").hidden = false;
+  $("busyText").textContent = `${file.name} · ${fmt(file.size / 1e6)} MB`;
+  $("busyBar").style.width = "0";
+  const reader = new FileReader();
+  reader.onprogress = (e) => { if (e.lengthComputable) $("busyBar").style.width = `${(e.loaded / e.total) * 100}%`; };
+  reader.onerror = () => showError(`${file.name} nejde přečíst.`);
+  reader.onload = () => setTimeout(() => openBuffer(reader.result, file.name), 30);
+  reader.readAsArrayBuffer(file);
+}
+$("open").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", (e) => { readFile(e.target.files[0]); e.target.value = ""; });
+window.addEventListener("dragover", (e) => { e.preventDefault(); $("drop").hidden = false; });
+window.addEventListener("dragleave", (e) => { if (e.target === $("drop")) $("drop").hidden = true; });
+window.addEventListener("drop", (e) => { e.preventDefault(); $("drop").hidden = true; readFile(e.dataTransfer.files[0]); });
+// for testing from a local server: window.previzOpen(arrayBuffer, "name.glb")
+window.previzOpen = openBuffer;
+
+// a published scene: ?p=code is a folder next to this page with model.bin; the key after # is
+// the AES-GCM key the file was sealed with (the browser keeps the # part to itself, so the
+// server and anyone browsing it see only sealed bytes)
+async function openLink() {
+  const code = new URLSearchParams(location.search).get("p");
+  if (!code || !/^[A-Za-z0-9_-]{4,40}$/.test(code)) return false;
+  const keyB64 = location.hash.replace(/^#/, "");
+  $("open").hidden = true;
+  $("busy").hidden = false;
+  $("busyText").textContent = "Stahuji scénu…";
+  $("busyBar").style.width = "0";
+  try {
+    const res = await fetch(`p/${code}/model.bin`, { cache: "force-cache" });
+    if (!res.ok) throw new Error(`odkaz už neplatí (${res.status})`);
+    const total = Number(res.headers.get("content-length")) || 0;
+    const parts = []; let got = 0;
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value); got += value.byteLength;
+      $("busyText").textContent = total ? `Stahuji scénu · ${fmt(got / 1e6)} / ${fmt(total / 1e6)} MB` : `Stahuji scénu · ${fmt(got / 1e6)} MB`;
+      if (total) $("busyBar").style.width = `${(got / total) * 100}%`;
+    }
+    let buf = new Uint8Array(got); { let o = 0; for (const p of parts) { buf.set(p, o); o += p.byteLength; } }
+    buf = buf.buffer;
+    if (keyB64) {
+      $("busyText").textContent = "Odemykám scénu…";
+      const raw = Uint8Array.from(atob(keyB64.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+      const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+      buf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: new Uint8Array(buf, 0, 12) }, key, new Uint8Array(buf, 12));
+    }
+    openBuffer(buf, `${code}.glb`);
+  } catch (e) {
+    showError(`Scénu nejde načíst: ${e.message || e}`);
+  }
+  return true;
+}
+window.previzView = { camera, controls, lookThrough, get root() { return root; } };
+
+// ---- the example scene (until a file is opened) ------------------------------------------
+function example() {
+  const g = new THREE.Group();
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, flatShading: true });
+  const box = (w, h, d, c, x, y, z, parent) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c)); m.position.set(x, y, z); parent.add(m); return m; };
+  const venue = new THREE.Group(); venue.name = "Podklady";
+  const hall = new THREE.Group(); hall.name = "Ukázkový sál"; venue.add(hall);
+  box(60, 0.1, 40, 0x2a2b2f, 0, -0.05, 4, hall);
+  box(60, 9, 0.3, 0x3a3c41, 0, 4.5, -16, hall);
+  const build = new THREE.Group(); build.name = "Stavba";
+  const stage = box(16, 1.2, 8, 0xb8bcc4, 0, 0.6, -10, build); stage.name = "Pódium 16 × 8 m";
+  const led = new THREE.Group(); led.name = "LED";
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(14, 5, 0.12), new THREE.MeshStandardMaterial({ color: 0x14161c, emissive: 0x1a2844, emissiveIntensity: 1.2 }));
+  wall.position.set(0, 4.2, -13.9); wall.name = "LED 14 × 5 m"; led.add(wall);
+  const people = new THREE.Group(); people.name = "Publikum";
+  const fig = new THREE.BoxGeometry(0.42, 1.7, 0.26); fig.translate(0, 0.85, 0);
+  const cols = [0x3a414d, 0x5c4b45, 0x6b7078, 0x2f4a5e];
+  for (let k = 0; k < cols.length; k++) {
+    const n = 220, im = new THREE.InstancedMesh(fig, mat(cols[k]), n), m4 = new THREE.Matrix4();
+    for (let i = 0; i < n; i++) { const j = i * cols.length + k; m4.makeTranslation(((j % 40) - 20) * 1.1 + 0.3 * Math.sin(j), 0, 2 + Math.floor(j / 40) * 1.1); im.setMatrixAt(i, m4); }
+    people.add(im);
+  }
+  const camsG = new THREE.Group(); camsG.name = "Kamery";
+  const mk = (num, name, focal, x, y, z, tx, ty, tz) => {
+    const node = new THREE.Object3D(); node.position.set(x, y, z); node.lookAt(tx, ty, tz);
+    const hf = 2 * Math.atan(36 / (2 * focal)), vf = 2 * Math.atan(Math.tan(hf / 2) / (16 / 9));
+    const c = new THREE.PerspectiveCamera(THREE.MathUtils.radToDeg(vf), 16 / 9, 0.05, 2000); node.add(c);
+    node.userData = { number: num, label: `${String(num).padStart(2, "0")} - ${name}`, focal_mm: focal, support: "Stativ", body: "Ukázka", height_m: y };
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.36), new THREE.MeshStandardMaterial({ color: 0xff0033, emissive: 0x400010 }));
+    body.position.copy(node.position); body.quaternion.copy(node.quaternion); body.userData.cameraBody = true;
+    camsG.add(node, body);
+  };
+  mk(1, "Celek", 35, 0, 4, 22, 0, 2, -10);
+  mk(2, "Detail", 200, 6, 2.2, 14, 0, 2, -10);
+  mk(3, "Jeřáb", 24, -14, 7, 4, 0, 1.5, -10);
+  g.add(venue, build, led, people, camsG);
+  return g;
+}
+
+adopt(example(), "Ukázková scéna", "otevři vlastní .glb z Previz Stream");
+resize();
+openLink();
+
+function tick(now) {
+  requestAnimationFrame(tick);
+  if (fly) {
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const t = reduce ? 1 : Math.min(1, (now - fly.start) / 700);
+    const e = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+    camera.position.lerpVectors(fly.from, fly.to, e);
+    controls.target.lerpVectors(fly.fromT, fly.toT, e);
+    camera.fov = fly.fromF + (fly.toF - fly.fromF) * e;
+    camera.updateProjectionMatrix();
+    if (t >= 1) fly = null;
+    needs = true;
+  }
+  if (controls.update()) needs = true;
+  if (needs) {
+    renderer.render(scene, camera);
+    needs = false;
+  }
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
