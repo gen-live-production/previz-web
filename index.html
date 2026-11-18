@@ -336,7 +336,28 @@ function setHud(label, big, air) {
 }
 
 document.querySelectorAll("#views button").forEach((b) => b.addEventListener("click", () => { leaveCamera(); views[b.dataset.view](); }));
-controls.addEventListener("start", () => { if (!fly) leaveCamera(); });
+
+// the pivot: what is in the middle of the screen. After a camera view or a two-finger pan the
+// orbit point drifts off into the air; at the start of every gesture it is put back onto the
+// scene along the current line of sight, so the view does not jump and the turn goes around
+// the thing being looked at
+const centreRay = new THREE.Raycaster();
+function repivot() {
+  if (!root) return;
+  centreRay.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const hit = centreRay.intersectObject(root, true).find((h) => h.object.visible && visibleChain(h.object));
+  const dir = camera.getWorldDirection(new THREE.Vector3());
+  let d = hit ? hit.distance : null;
+  if (d === null) {
+    // nothing under the centre (the sky): the point where the line of sight crosses the floor,
+    // else keep the pivot's distance
+    const floor = bounds.min.y;
+    d = dir.y < -1e-4 ? (floor - camera.position.y) / dir.y : camera.position.distanceTo(controls.target);
+  }
+  d = Math.max(d, 0.5);
+  controls.target.copy(camera.position).addScaledVector(dir, d);
+}
+controls.addEventListener("start", () => { if (!fly) { leaveCamera(); repivot(); } });
 controls.addEventListener("change", () => { needs = true; });
 
 // double tap: fly to the point under the finger
