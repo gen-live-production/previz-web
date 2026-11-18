@@ -191,10 +191,11 @@ button.primary { background: var(--red); border-color: var(--red); color: #000; 
     </ol>
     <div class="keys">
       <span class="label">1 prst</span><span>otáčení kolem bodu</span>
-      <span class="label">2 prsty</span><span>posun a přiblížení</span>
+      <span class="label">2 prsty</span><span>posun; roztažením prstů přiblížení</span>
       <span class="label">2× ťuk</span><span>přiletět na místo</span>
       <span class="label">Kamera</span><span>pohled objektivem s jeho ohniskem; pohnutím prstem odejdeš do volného pohledu</span>
     </div>
+    <div class="note" id="buildNote"></div>
     <button id="helpClose" type="button">Zavřít</button>
   </div>
 </div>
@@ -236,6 +237,17 @@ let fly = null;           // an animation of the view
 let needs = true;
 
 const $ = (id) => document.getElementById(id);
+// The build of this page. BUMP IT with every change of this file: a page that finds a newer
+// build on the server reloads itself past the browser's cache (GitHub Pages lets browsers
+// keep the page for ten minutes), and the help shows it, so one can tell what a phone runs.
+const BUILD = "2026-11-18.5";
+(async () => {
+  try {
+    const live = (await (await fetch("index.html", { cache: "no-store" })).text()).match(/const BUILD = "([^"]+)"/);
+    const q = new URLSearchParams(location.search);
+    if (live && live[1] !== BUILD && q.get("v") !== live[1]) { q.set("v", live[1]); location.replace(`${location.pathname}?${q}${location.hash}`); }
+  } catch (e) { /* offline or opened from a file: this copy it is */ }
+})();
 const fmt = (n, d = 1) => n.toLocaleString("cs-CZ", { maximumFractionDigits: d, minimumFractionDigits: d });
 
 function resize() {
@@ -399,12 +411,27 @@ canvas.addEventListener("pointerup", fingerUp);
 canvas.addEventListener("pointercancel", fingerUp);
 controls.addEventListener("change", () => { needs = true; });
 
-// double tap: fly to the point under the finger
+// double tap: fly to the point under the finger. A tap is one finger down and up within
+// 250 ms without moving (10 px) and with no other finger on the screen meanwhile; two taps
+// within 320 ms and 30 px of each other make the double tap. Lifting two fingers after moving
+// the view, or two quick drags, must not count (they used to, and the view jumped closer).
 const ray = new THREE.Raycaster();
-let lastTap = 0;
-canvas.addEventListener("pointerup", (ev) => {
+const down = new Map();
+let gestureMulti = false;
+let lastTap = null;
+canvas.addEventListener("pointerdown", (ev) => {
+  if (down.size > 0) gestureMulti = true;
+  else gestureMulti = false;
+  down.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, t: performance.now() });
+});
+const tapEnd = (ev, cancelled) => {
+  const d = down.get(ev.pointerId);
+  down.delete(ev.pointerId);
   const now = performance.now();
-  if (now - lastTap < 320 && root) {
+  const isTap = !cancelled && d && !gestureMulti && down.size === 0 && now - d.t < 250 && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 10;
+  if (!isTap) { lastTap = null; return; }
+  if (lastTap && now - lastTap.t < 320 && Math.hypot(ev.clientX - lastTap.x, ev.clientY - lastTap.y) < 30 && root) {
+    lastTap = null;
     const r = canvas.getBoundingClientRect();
     const p = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(p, camera);
@@ -415,9 +442,10 @@ canvas.addEventListener("pointerup", (ev) => {
       const back = camera.position.clone().sub(controls.target).multiplyScalar(0.45);
       flyTo(at.clone().add(back), at);
     }
-    lastTap = 0;
-  } else lastTap = now;
-});
+  } else lastTap = { x: ev.clientX, y: ev.clientY, t: now };
+};
+canvas.addEventListener("pointerup", (ev) => tapEnd(ev, false));
+canvas.addEventListener("pointercancel", (ev) => tapEnd(ev, true));
 function visibleChain(o) { for (let n = o; n; n = n.parent) if (!n.visible) return false; return true; }
 
 // ---- cameras and layers ------------------------------------------------------------------
@@ -482,7 +510,7 @@ $("layersBtn").addEventListener("click", () => {
   $("layersBtn").classList.toggle("on", !p.hidden);
   $("layersBtn").setAttribute("aria-expanded", String(!p.hidden));
 });
-$("helpBtn").addEventListener("click", () => { $("help").hidden = false; });
+$("helpBtn").addEventListener("click", () => { $("buildNote").textContent = `verze ${BUILD}`; $("help").hidden = false; });
 $("helpClose").addEventListener("click", () => { $("help").hidden = true; });
 
 // ---- loading -----------------------------------------------------------------------------
