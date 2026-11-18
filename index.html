@@ -224,7 +224,8 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.dampingFactor = 0.12;
 controls.screenSpacePanning = true;
-controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+// one finger turns, two fingers move the view (as in the app); a clear pinch zooms (below)
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.PAN };
 controls.maxPolarAngle = Math.PI * 0.98;
 
 let root = null;          // the loaded scene
@@ -345,7 +346,7 @@ const centreRay = new THREE.Raycaster();
 function repivot() {
   if (!root) return;
   centreRay.setFromCamera(new THREE.Vector2(0, 0), camera);
-  const hit = centreRay.intersectObject(root, true).find((h) => h.object.visible && visibleChain(h.object));
+  const hit = centreRay.intersectObject(root, true).find((h) => h.object.visible && !h.object.userData.cameraBody && visibleChain(h.object));
   const dir = camera.getWorldDirection(new THREE.Vector3());
   let d = hit ? hit.distance : null;
   if (d === null) {
@@ -357,7 +358,32 @@ function repivot() {
   d = Math.max(d, 0.5);
   controls.target.copy(camera.position).addScaledVector(dir, d);
 }
-controls.addEventListener("start", () => { if (!fly) { leaveCamera(); repivot(); } });
+controls.addEventListener("start", () => { if (!fly) { repivot(); leaveCamera(); } });
+
+// pinch: two fingers whose distance clearly changes (more than 6 %) zoom towards the pivot;
+// a small change is just the hands not being still, and two fingers then only move the view
+const fingers = new Map();
+let pinch = null;
+canvas.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") { fingers.set(e.pointerId, [e.clientX, e.clientY]); pinch = null; } });
+canvas.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "touch" || !fingers.has(e.pointerId)) return;
+  fingers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (fingers.size !== 2) return;
+  const [a, b] = [...fingers.values()];
+  const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+  if (!pinch) { pinch = { d0: d, last: d, live: false }; return; }
+  if (!pinch.live && Math.abs(d / pinch.d0 - 1) > 0.06) { pinch.live = true; pinch.last = d; }
+  if (!pinch.live || d < 1) return;
+  const k = pinch.last / d;
+  pinch.last = d;
+  const off = camera.position.clone().sub(controls.target);
+  const len = THREE.MathUtils.clamp(off.length() * k, controls.minDistance, controls.maxDistance);
+  camera.position.copy(controls.target).addScaledVector(off.normalize(), len);
+  needs = true;
+});
+const fingerUp = (e) => { fingers.delete(e.pointerId); pinch = null; };
+canvas.addEventListener("pointerup", fingerUp);
+canvas.addEventListener("pointercancel", fingerUp);
 controls.addEventListener("change", () => { needs = true; });
 
 // double tap: fly to the point under the finger
@@ -455,7 +481,12 @@ function adopt(obj, title, facts) {
   root = obj;
   scene.add(root);
   root.updateMatrixWorld(true);
-  bounds = new THREE.Box3().setFromObject(root);
+  // what the views frame and the orbit falls back to: the show itself (Stavba, LED, publikum,
+  // kamery…); a drawing often carries far-off things (title blocks, a second plan) that would
+  // put the centre out in the void. Only drawings: the drawings then
+  bounds = new THREE.Box3();
+  for (const g of root.children) if (g.name !== "Podklady") bounds.expandByObject(g);
+  if (bounds.isEmpty()) bounds.setFromObject(root);
   if (bounds.isEmpty()) bounds.set(new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 10, 20));
   const size = bounds.getSize(new THREE.Vector3());
   const span = Math.max(size.x, size.z, 10);
